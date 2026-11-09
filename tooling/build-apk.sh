@@ -10,6 +10,8 @@
 #   tooling/build-apk.sh --debug -f x64 -t lib/dev/runtime_probe_main.dart
 #   tooling/build-apk.sh --dry-run -f all      print the commands, build nothing
 #   tooling/build-apk.sh -- --dart-define=K=V  extra flags for `flutter build apk`
+#   DSH_PHONE_CONTROL=false tooling/build-apk.sh
+#                                               omit phone control (default: true)
 #
 #   -f, --flavor arm64|x64|all       default arm64
 #   --release | --debug | --profile  default --release
@@ -32,7 +34,7 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 APP="$ROOT/app"
 OUT="$APP/build/app/outputs/flutter-apk"
 
-usage() { sed -n '2,23p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 die() { echo "build-apk: $*" >&2; exit 1; }
 
 flavor=arm64 mode=release target='' code='' name='' dry=0 keep_daemon=0 want_beta=0
@@ -57,6 +59,13 @@ while (($#)); do
   esac
 done
 
+phone_control=${DSH_PHONE_CONTROL-true}
+case "$phone_control" in
+  true | false) ;;
+  *) die "DSH_PHONE_CONTROL is true or false: $phone_control" ;;
+esac
+export ORG_GRADLE_PROJECT_dshPhoneControl="$phone_control"
+
 case "$flavor" in
   arm64 | x64) flavors=("$flavor") ;;
   all) flavors=(arm64 x64) ;;
@@ -66,6 +75,7 @@ for arg in "${extra[@]}"; do
   case "$arg" in
     --build-number* | --build-name* | --flavor* | --target-platform*)
       die "$arg is set by this script; use its own options" ;;
+    --dart-define=DSH_PHONE_CONTROL=*) die "set DSH_PHONE_CONTROL=true or false in the environment" ;;
     --split-per-abi) die "--split-per-abi adds an ABI offset to versionCode; flavors already split by ABI" ;;
   esac
 done
@@ -106,7 +116,8 @@ fi
 commands=()
 for f in "${flavors[@]}"; do
   cmd=(flutter build apk "--$mode" --flavor "$f" --target-platform "$(platform_of "$f")"
-    --build-name "$name" --build-number "$code" "--dart-define=DSH_APP_VERSION=$name+$code")
+    --build-name "$name" --build-number "$code" "--dart-define=DSH_APP_VERSION=$name+$code"
+    "--dart-define=DSH_PHONE_CONTROL=$phone_control")
   [[ -n $target ]] && cmd+=(-t "$target")
   ((beta)) && cmd+=("--dart-define-from-file=$beta_json")
   cmd+=("${extra[@]}")

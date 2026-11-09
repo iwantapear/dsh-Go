@@ -19,6 +19,11 @@ val hasWholeReleaseKey = listOf("storeFile", "keyAlias").all { !keyProps.getProp
     listOf("storePassword", "keyPassword").all { !keyProps.getProperty(it).isNullOrEmpty() } &&
     file(keyProps.getProperty("storeFile")).exists()
 
+// Optional phone-control-free builds; tooling/build-apk.sh exports this as a Gradle project property.
+val dshPhoneControl = providers.gradleProperty("dshPhoneControl").orElse("true").get().also {
+    require(it == "true" || it == "false") { "dshPhoneControl must be true or false" }
+}.toBoolean()
+
 // Per-ABI runtime bundles produced by runtime/build-runtime.sh.
 val runtimeOut = rootProject.file("../../runtime/out")
 
@@ -42,8 +47,14 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     defaultConfig {
         applicationId = "io.github.ccch1mneyyy.dsh_app"
+        buildConfigField("boolean", "PHONE_CONTROL_ENABLED", dshPhoneControl.toString())
+        manifestPlaceholders["phoneControlNode"] = if (dshPhoneControl) "merge" else "remove"
         // java.nio.file (symlinks while unpacking the rootfs) needs API 26.
         minSdk = 26
         // Target 28 like Termux, so the API 29+ exec restriction on app-private

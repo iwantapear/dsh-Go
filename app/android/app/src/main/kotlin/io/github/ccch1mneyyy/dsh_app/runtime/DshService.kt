@@ -18,6 +18,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import io.github.ccch1mneyyy.dsh_app.BuildConfig
 import io.github.ccch1mneyyy.dsh_app.MainActivity
 import io.github.ccch1mneyyy.dsh_app.R
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneControl
@@ -78,7 +79,9 @@ class DshService : Service() {
                 // 「停止操作」 on the notification: stop the task it was shown for, keep the engine.
                 val taskId = intent.data?.takeIf { it.scheme == PHONE_TASK_SCHEME }?.schemeSpecificPart?.toLongOrNull()
                 // l10n:keep agent stop reason
-                if (taskId != null) PhoneControl.get(this).stopShownTask("用户在通知里停止", taskId)
+                if (BuildConfig.PHONE_CONTROL_ENABLED && taskId != null) {
+                    PhoneControl.get(this).stopShownTask("用户在通知里停止", taskId)
+                }
                 return START_NOT_STICKY
             }
             ACTION_STOP -> {
@@ -332,7 +335,7 @@ class DshService : Service() {
                 @Suppress("DEPRECATION") Notification.Builder(context)
             }
             // While DSH operates the phone: say what it does and offer 停止操作 for that task.
-            val phone = PhoneControl.peek()
+            val phone = if (BuildConfig.PHONE_CONTROL_ENABLED) PhoneControl.peek() else null
             val phoneTask = phone?.liveTask()
             val phoneLine = phoneTask?.let { phone?.foregroundLine(it) }
             if (phoneTask != null) {

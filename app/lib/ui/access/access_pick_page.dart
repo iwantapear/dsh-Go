@@ -111,7 +111,7 @@ class _AccessPickPageState extends ConsumerState<AccessPickPage> {
           key: const ValueKey('access-pick-card'),
           margin: EdgeInsets.zero,
           children: [
-            for (final feature in AccessFeature.values)
+            for (final feature in sanitizeAccessFeatures(AccessFeature.values))
               AccessFeatureRow(
                 feature: feature,
                 selected: _picked.contains(feature),

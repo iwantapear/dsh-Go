@@ -46,6 +46,7 @@ import android.view.WindowManager
 import android.view.animation.PathInterpolator
 import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
+import io.github.ccch1mneyyy.dsh_app.BuildConfig
 import io.github.ccch1mneyyy.dsh_app.MainActivity
 import io.github.ccch1mneyyy.dsh_app.R
 import io.github.ccch1mneyyy.dsh_app.nativemedia.MicArbiter
@@ -1359,7 +1360,7 @@ internal object PetOverlay {
                 dismissMenu(animated = true)
                 showAsk(fresh = item == PetMenuItem.NEW_CHAT)
             }
-            PetMenuItem.SCREENSHOT -> captureScreenshot()
+            PetMenuItem.SCREENSHOT -> if (BuildConfig.PHONE_CONTROL_ENABLED) captureScreenshot()
             PetMenuItem.STOP -> {
                 dismissMenu(animated = true)
                 callDart("stop", mapOf("host" to target?.host, "sessionId" to target?.sessionId)) { evaluate() }
@@ -1380,7 +1381,9 @@ internal object PetOverlay {
 
     /** 切换主机: the menu's rows become the hosts, the one in use muted. */
     /** The rows this phone can offer: the accessibility screenshot exists from Android 11. */
-    private fun menuItems(push: PetPush?) = PetMenuItem.of(push, screenshots = Build.VERSION.SDK_INT >= 30)
+    private fun menuItems(push: PetPush?) = PetMenuItem.of(
+        push, screenshots = BuildConfig.PHONE_CONTROL_ENABLED && Build.VERSION.SDK_INT >= 30,
+    )
 
     private fun showHosts(ticket: OverlayWindowOwner.Ticket) {
         val view = menuView ?: return
@@ -1427,6 +1430,7 @@ internal object PetOverlay {
     }
 
     private fun captureScreenshot() {
+        if (!BuildConfig.PHONE_CONTROL_ENABLED) return
         val ticket = petTicket
         if (!alive(ticket)) return
         val request = capture.begin() ?: return

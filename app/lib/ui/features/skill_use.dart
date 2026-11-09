@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
+import '../../phone/build_flag.dart';
 import '../../state/agents_state.dart' show hostSessionsProvider;
 import '../../state/composer_insert.dart';
 import '../../state/workspaces_state.dart';
@@ -69,7 +70,7 @@ class SkillUseActions extends ConsumerWidget {
         child: label(l10n.featuresSkillUseHere),
       ),
     );
-    if (!RegExp(r'^phone-task-[a-f0-9]{32}$').hasMatch(skill.name)) return actions;
+    if (!phoneControlBuildEnabled || !RegExp(r'^phone-task-[a-f0-9]{32}$').hasMatch(skill.name)) return actions;
     return Column(mainAxisSize: MainAxisSize.min, children: [
       actions,
       TextButton(onPressed: () async {

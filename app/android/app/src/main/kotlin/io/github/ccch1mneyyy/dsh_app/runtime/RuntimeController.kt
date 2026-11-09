@@ -10,7 +10,9 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import io.github.ccch1mneyyy.dsh_app.BuildConfig
 import io.github.ccch1mneyyy.dsh_app.phone.PhoneControl
+import io.github.ccch1mneyyy.dsh_app.phone.PhoneGuest
 import org.json.JSONArray
 import org.json.JSONObject
 import io.github.ccch1mneyyy.dsh_app.phone.skills.PhoneSkillRoute
@@ -462,7 +464,13 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                 val storage = pendingPhoneStorage && PhoneStorage.isGranted(app) && PhoneStorage.binds().isNotEmpty()
                 PhoneStorage.syncShortcut(installer.rootfs, storage)
                 // Phone control: bridge up and guest files written before DSH starts; off in safe mode.
-                val phone = PhoneControl.get(app).prepareLaunch(installer.rootfs, safe) { log(it, "system") }
+                // A phone-control-free build ignores stale preferences and never mounts mcp__phone__*.
+                val phone = if (BuildConfig.PHONE_CONTROL_ENABLED) {
+                    PhoneControl.get(app).prepareLaunch(installer.rootfs, safe) { log(it, "system") }
+                } else {
+                    PhoneGuest.clearConfig(installer.rootfs)
+                    false
+                }
                 val searchOverlay = !safe && SessionSearchGuest.writeFiles(installer.rootfs)
                 if (!safe && !searchOverlay) {
                     log("[dsh-app] message search overlay not written; searching matches titles only", "system")
@@ -519,7 +527,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                         process = it
                     }
                 } ?: run {
-                    PhoneControl.get(app).onEngineStopped()
+                    if (BuildConfig.PHONE_CONTROL_ENABLED) PhoneControl.get(app).onEngineStopped()
                     return@execute
                 }
                 timeline.spawned()
@@ -537,7 +545,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
                 synchronized(this) {
                     if (gen != runGen) return@execute
                     process = null
-                    PhoneControl.get(app).onEngineStopped()
+                    if (BuildConfig.PHONE_CONTROL_ENABLED) PhoneControl.get(app).onEngineStopped()
                     val startupError = launched?.startupError
                     if (startupError == null && stopGen >= gen) {
                         // A cancelled preparation can throw before a waiter exists.
@@ -978,7 +986,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
         log("[dsh-app] DSH is listening at $baseUrl${if (runSafe) " (safe mode)" else ""}", "system")
         timeline.ready()?.let { log(it, "system") }
         setPhase(Phase.RUNNING)
-        PhoneControl.get(app).onEngineReady()
+        if (BuildConfig.PHONE_CONTROL_ENABLED) PhoneControl.get(app).onEngineReady()
         val gen = runGen
         main.postDelayed({ if (gen == runGen && phase == Phase.RUNNING && process != null) onHealthy() }, SafePolicy.HEALTHY_MS)
     }
@@ -989,7 +997,7 @@ class RuntimeController private constructor(private val app: Context) : DshProce
             if (source.startupError != null) source.launchDiagnostics.failed("startFailed")
             else if (!expected && stopGen < runGen) source.launchDiagnostics.failed("exit:$code")
             process = null
-            PhoneControl.get(app).onEngineStopped()
+            if (BuildConfig.PHONE_CONTROL_ENABLED) PhoneControl.get(app).onEngineStopped()
             baseUrl = null
             token = null
             healthyAt = null

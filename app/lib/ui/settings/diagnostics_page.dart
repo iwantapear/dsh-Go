@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
+import '../../phone/build_flag.dart';
 import '../../diagnostics/diagnostics_publish.dart';
 import '../../diagnostics/redact.dart';
 import '../../diagnostics/system_ime_diagnostics.dart';
@@ -93,7 +94,7 @@ class DiagnosticsPage extends ConsumerWidget {
     }
 
     Future<void> publishForAi() async {
-      final published = await ref.read(diagnosticsPublisherProvider).publish(includeSystemIme: true);
+      final published = await ref.read(diagnosticsPublisherProvider).publish(includeSystemIme: phoneControlBuildEnabled);
       if (!context.mounted) return;
       showBriefNotice(
         context,
@@ -130,7 +131,7 @@ class DiagnosticsPage extends ConsumerWidget {
             InfoRow(label: 'API Key', value: settings.hasApiKey ? l10n.pluginsConfigured : l10n.commonNotSet),
           ],
         ),
-        const SystemImeDiagnosticsSection(),
+        if (phoneControlBuildEnabled) const SystemImeDiagnosticsSection(),
         DiagnosticsExportCard(
           title: l10n.pluginsExport,
           extra: [

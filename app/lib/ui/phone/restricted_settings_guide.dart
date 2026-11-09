@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
 import '../../pets/overlay_channel.dart';
+import '../../phone/build_flag.dart';
 import '../../state/app_info.dart';
 import '../../state/phone_state.dart';
 import '../common/capsule_chip.dart';
@@ -136,7 +137,7 @@ class _RestrictedSettingsGuidePageState extends ConsumerState<RestrictedSettings
     super.initState();
     _lifecycle = AppLifecycleListener(
       onResume: () => unawaited(
-        widget.target == RestrictedTarget.overlay
+        widget.target == RestrictedTarget.overlay || !phoneControlBuildEnabled
             ? ref.read(petOverlayProvider.notifier).refresh()
             : ref.read(phoneProvider.notifier).refreshStatus(),
       ),
@@ -162,11 +163,13 @@ class _RestrictedSettingsGuidePageState extends ConsumerState<RestrictedSettings
     final overlay = widget.target == RestrictedTarget.overlay;
     final done = overlay
         ? ref.watch(petOverlayProvider.select((s) => s.permission.usable))
-        : ref.watch(phoneProvider.select((s) => s.status.a11y.enabled));
-    final rom =
-        _picked ?? widget.rom ?? RomFamily.of(ref.watch(phoneProvider.select((s) => s.status.device.manufacturer)));
+        : phoneControlBuildEnabled && ref.watch(phoneProvider.select((s) => s.status.a11y.enabled));
+    final manufacturer = phoneControlBuildEnabled
+        ? ref.watch(phoneProvider.select((s) => s.status.device.manufacturer))
+        : ref.watch(petOverlayProvider.select((s) => s.manufacturer));
+    final rom = _picked ?? widget.rom ?? RomFamily.of(manufacturer);
     final guide = RomGuide.forTarget(rom, widget.target);
-    final phone = ref.read(phoneProvider.notifier);
+    final phone = phoneControlBuildEnabled ? ref.read(phoneProvider.notifier) : null;
     return AppPage.list(
       title: l10n.phoneRestrictedTitle,
       subtitle: Text(l10n.phoneRestrictedSubtitle(widget.target.place)),
@@ -206,7 +209,12 @@ class _RestrictedSettingsGuidePageState extends ConsumerState<RestrictedSettings
               Expanded(
                 child: OutlinedButton(
                   style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-                  onPressed: () => _open(phone.openAppDetails, l10n.phoneOpenAppInfoFailed),
+                  onPressed: () => _open(
+                    phoneControlBuildEnabled
+                        ? phone!.openAppDetails
+                        : ref.read(petOverlayProvider.notifier).openAppDetails,
+                    l10n.phoneOpenAppInfoFailed,
+                  ),
                   child: Text(l10n.phoneRestrictedOpenInfo),
                 ),
               ),
@@ -214,12 +222,14 @@ class _RestrictedSettingsGuidePageState extends ConsumerState<RestrictedSettings
               Expanded(
                 child: FilledButton(
                   style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-                  onPressed: () => overlay
-                      ? _open(
+                  onPressed: overlay
+                      ? () => _open(
                           ref.read(petOverlayProvider.notifier).openPermission,
                           l10n.phoneRestrictedOpenOverlayFailed,
                         )
-                      : _open(phone.openAccessibilitySettings, l10n.phoneRestrictedOpenAccessibilityFailed),
+                      : phoneControlBuildEnabled
+                      ? () => _open(phone!.openAccessibilitySettings, l10n.phoneRestrictedOpenAccessibilityFailed)
+                      : null,
                   child: Text(widget.target.action),
                 ),
               ),

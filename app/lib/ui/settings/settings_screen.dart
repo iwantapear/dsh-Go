@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
+import '../../phone/build_flag.dart';
 import '../../runtime/local_footprint.dart';
 import '../../runtime/runtime_state.dart';
 import '../../state/account_state.dart';
@@ -103,8 +104,8 @@ class SettingsScreen extends ConsumerWidget {
         ? (replyPrefsSummary(ref) == null ? l10n.commonNotSet : l10n.hubValueSet)
         : null;
     // 能力.
-    final phone = ref.watch(phoneProvider);
-    final phoneValue = !phone.loaded || !phone.status.ready
+    final phone = phoneControlBuildEnabled ? ref.watch(phoneProvider) : null;
+    final phoneValue = phone == null || !phone.loaded || !phone.status.ready
         ? null
         : !phone.status.enabled
         ? l10n.hubValueOff
@@ -166,13 +167,14 @@ class SettingsScreen extends ConsumerWidget {
         SettingsSection(
           title: l10n.hubGroupCapabilities,
           children: [
-            SettingsTile(
-              icon: AppIcons.phoneControl,
-              tint: SettingsHues.abilities,
-              spot: SettingsIndex.entry(SettingsPageId.phone),
-              value: text(phoneValue, color: phoneValue == l10n.hubValueOneStep ? colors.warning : null),
-              onTap: () => _push(context, const PhoneControlScreen()),
-            ),
+            if (phoneControlBuildEnabled)
+              SettingsTile(
+                icon: AppIcons.phoneControl,
+                tint: SettingsHues.abilities,
+                spot: SettingsIndex.entry(SettingsPageId.phone),
+                value: text(phoneValue, color: phoneValue == l10n.hubValueOneStep ? colors.warning : null),
+                onTap: () => _push(context, const PhoneControlScreen()),
+              ),
             SettingsTile(
               icon: AppIcons.webSearch,
               tint: SettingsHues.abilities,

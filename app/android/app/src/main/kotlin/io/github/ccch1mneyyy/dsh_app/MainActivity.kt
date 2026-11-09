@@ -41,7 +41,7 @@ class MainActivity : FlutterActivity() {
         cache.get(ENGINE_ID)?.let { return it }
         return FlutterEngine(applicationContext).also { engine ->
             engine.plugins.add(RuntimePlugin())
-            engine.plugins.add(PhonePlugin())
+            if (BuildConfig.PHONE_CONTROL_ENABLED) engine.plugins.add(PhonePlugin())
             engine.plugins.add(NotifyPlugin())
             engine.plugins.add(FilesPlugin())
             engine.plugins.add(LinksPlugin())
@@ -115,7 +115,9 @@ class MainActivity : FlutterActivity() {
 
     override fun onResume() {
         super.onResume()
-        io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundControl.get(applicationContext).restoreKeptChannel()
+        if (BuildConfig.PHONE_CONTROL_ENABLED) {
+            io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundControl.get(applicationContext).restoreKeptChannel()
+        }
         inForeground = true
         // Coming back counts as activity: the first frames may not be scheduled yet.
         framesActive = true

@@ -65,7 +65,7 @@ class _SystemAccessPageState extends ConsumerState<SystemAccessPage> {
       subtitle: Text(l10n.accessPageSubtitle),
       children: [
         if (readings != null)
-          for (final feature in AccessFeature.values)
+          for (final feature in sanitizeAccessFeatures(AccessFeature.values))
             if ([
               for (final item in accessItemsFor(feature, readings.vendor))
                 if (accessStateOf(item, readings, visited) case final state?)

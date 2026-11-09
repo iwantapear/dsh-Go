@@ -11,6 +11,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../state/artifacts.dart' show FilesChannel, filesChannelProvider;
 import '../l10n/l10n.dart';
+import '../phone/build_flag.dart';
 import 'diagnostics_bundle.dart';
 
 /// Where an export is; the UI says it in words.
@@ -108,7 +109,7 @@ String diagnosticsSavedText(String where) =>
 
 final diagnosticsExporterProvider = Provider<DiagnosticsExporter>(
   (ref) => DiagnosticsExporter(
-    collect: (at) => collectDiagnostics(ref, at, includeSystemIme: true),
+    collect: (at) => collectDiagnostics(ref, at, includeSystemIme: phoneControlBuildEnabled),
     files: ref.watch(filesChannelProvider),
   ),
 );

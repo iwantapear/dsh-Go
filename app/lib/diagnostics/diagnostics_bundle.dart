@@ -17,6 +17,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../phone/build_flag.dart';
 import '../phone/phone_channel.dart';
 import '../runtime/runtime_bridge.dart';
 import '../performance/performance_state.dart';
@@ -109,14 +110,15 @@ abstract final class DiagnosticsBundle {
         'error': status.error,
       },
       'manifest': s.native.manifest,
-      'phone': {
-        'available': s.phone.ready,
-        if (s.phone.ready) ...{
-          'enabled': s.phone.enabled,
-          'bridgeListening': s.phone.bridgeListening,
-          'a11y': {'enabled': s.phone.a11y.enabled, 'serviceConnected': s.phone.a11y.serviceConnected},
+      if (phoneControlBuildEnabled)
+        'phone': {
+          'available': s.phone.ready,
+          if (s.phone.ready) ...{
+            'enabled': s.phone.enabled,
+            'bridgeListening': s.phone.bridgeListening,
+            'a11y': {'enabled': s.phone.a11y.enabled, 'serviceConnected': s.phone.a11y.serviceConnected},
+          },
         },
-      },
       'connection': s.connection,
       'performance': s.performance,
       'voice': {...voiceDiagnosticsFacts(s.native.voice), 'mode': s.voiceMode.name},
@@ -198,7 +200,7 @@ Future<DiagnosticsSnapshot> collectDiagnostics(Ref ref, DateTime at, {bool inclu
   final settings = ref.read(settingsProvider);
   final bridge = ref.read(runtimeBridgeProvider);
   final channel = ref.read(diagnosticsChannelProvider);
-  final systemIme = includeSystemIme ? ref.read(systemImeDiagnosticsProvider) : null;
+  final systemIme = includeSystemIme && phoneControlBuildEnabled ? ref.read(systemImeDiagnosticsProvider) : null;
   const wait = Duration(seconds: 5);
 
   Future<T> attempt<T>(Future<T> Function() read, T fallback) async {
@@ -210,7 +212,9 @@ Future<DiagnosticsSnapshot> collectDiagnostics(Ref ref, DateTime at, {bool inclu
   }
 
   final native = await attempt(channel.info, const NativeDiagnostics());
-  final phone = await attempt(() => ref.read(phoneChannelProvider).status(), const PhoneStatus.notReady());
+  final phone = phoneControlBuildEnabled
+      ? await attempt(() => ref.read(phoneChannelProvider).status(), const PhoneStatus.notReady())
+      : const PhoneStatus.notReady();
   // The log file outlives the app process; the in-memory log is the
   // fallback (and what tests see).
   var engineLog = await attempt(channel.engineLog, const <String>[]);

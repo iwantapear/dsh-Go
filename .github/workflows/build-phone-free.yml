@@ -1,0 +1,184 @@
+# Local-user build of DSH Go without phone control. This runs only from a fork
+# (or manually from a copy): upstream does not accept changes, and a release
+# APK needs the generated runtime payload which is not committed.
+name: Build phone-free APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-phone-free-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: 3.47.7
+  GRADLE_VERSION: 9.3.1
+  TZ: Asia/Shanghai
+  DSH_MAVEN_MIRRORS: '0'
+  DSH_PHONE_CONTROL: 'false'
+
+jobs:
+  build:
+    name: Phone-free arm64 APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Java 17
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+
+      - name: Install build helpers and test fonts
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q file gpgv zstd xz-utils fonts-noto-cjk fonts-noto-cjk-extra
+          sudo install -d /usr/share/fonts/noto-cjk
+          sudo install -m644 /usr/share/fonts/opentype/noto/NotoSansCJK-{Regular,Bold,Light}.ttc /usr/share/fonts/noto-cjk/
+
+      - name: Create temporary release signing key
+        run: |
+          signing="$RUNNER_TEMP/dshgo-signing"
+          mkdir -p "$signing"
+          password="$(openssl rand -hex 24)"
+          keytool -genkeypair \
+            -keystore "$signing/release.jks" \
+            -storepass "$password" \
+            -keypass "$password" \
+            -alias dshgo-ci \
+            -keyalg RSA \
+            -keysize 4096 \
+            -validity 10000 \
+            -dname "CN=DSH Go Local CI, OU=Self-signed, O=Self-signed, L=Shenzhen, ST=Guangdong, C=CN"
+          chmod 600 "$signing/release.jks"
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=dshgo-ci\nkeyPassword=%s\n' \
+            "$signing/release.jks" "$password" "$password" > app/android/key.properties
+          chmod 600 app/android/key.properties
+          printf '%s\n' "$password" > "$signing/KEY_PASSWORD.txt"
+          chmod 600 "$signing/KEY_PASSWORD.txt"
+          echo "SIGNING_DIR=$signing" >> "$GITHUB_ENV"
+
+      - name: Resolve Flutter packages and analyze
+        working-directory: app
+        run: |
+          flutter pub get --enforce-lockfile
+          flutter analyze --no-pub
+          printf 'sdk.dir=%s\nflutter.sdk=%s\n' "$ANDROID_HOME" "$FLUTTER_ROOT" > android/local.properties
+
+      - name: Test both build modes
+        working-directory: app
+        run: |
+          flutter test --no-pub test/phone/phone_control_build_test.dart
+          flutter test --no-pub --dart-define=DSH_PHONE_CONTROL=false test/phone/phone_control_build_test.dart
+
+      - name: Make the Gradle wrapper Flutter expects
+        working-directory: app/android
+        run: |
+          if [[ ! -x gradlew ]]; then
+            gradle wrapper --gradle-version "$GRADLE_VERSION" --distribution-type bin
+          fi
+
+      - name: Build the arm64 local runtime
+        run: bash runtime/build-runtime.sh arm64-v8a
+
+      - name: Run Android JVM tests
+        working-directory: app/android
+        run: gradle --stacktrace :app:testArm64DebugUnitTest
+
+      - name: Build phone-free APK
+        run: DSH_BETA_TOKEN_FILE= bash tooling/build-apk.sh -f arm64 --keep-daemon
+
+      - name: Verify signing and removed capabilities
+        run: |
+          set -euo pipefail
+          apk="app/build/app/outputs/flutter-apk/app-arm64-release.apk"
+          test -s "$apk"
+          build_tools="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$build_tools/apksigner" verify -v --min-sdk-version 21 --print-certs "$apk" | tee "$RUNNER_TEMP/apksigner.txt"
+          grep -q 'Verified using v1 scheme (JAR signing): true' "$RUNNER_TEMP/apksigner.txt"
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' "$RUNNER_TEMP/apksigner.txt"
+          grep -q 'Verified using v3 scheme (APK Signature Scheme v3): true' "$RUNNER_TEMP/apksigner.txt"
+          if grep -q 'CN=Android Debug' "$RUNNER_TEMP/apksigner.txt"; then
+            echo 'APK unexpectedly uses the Android debug certificate' >&2
+            exit 1
+          fi
+
+          "$build_tools/aapt2" dump permissions "$apk" | tee "$RUNNER_TEMP/permissions.txt"
+          "$build_tools/aapt2" dump xmltree "$apk" AndroidManifest.xml > "$RUNNER_TEMP/manifest.txt"
+          for forbidden in \
+            android.permission.WRITE_SECURE_SETTINGS \
+            moe.shizuku.manager.permission.API_V23 \
+            android.permission.RECEIVE_BOOT_COMPLETED \
+            com.android.alarm.permission.SET_ALARM \
+            PhoneA11yService \
+            ShizukuProvider \
+            PrivilegedKeepJob \
+            AdbPairingNotification \
+            PhoneSelfCheckTargetActivity \
+            android.accessibilityservice.AccessibilityService
+          do
+            if grep -Fq "$forbidden" "$RUNNER_TEMP/permissions.txt" "$RUNNER_TEMP/manifest.txt"; then
+              echo "Phone-control surface still present: $forbidden" >&2
+              exit 1
+            fi
+          done
+
+          echo 'Still declared (expected shared features):'
+          grep -E 'MANAGE_EXTERNAL_STORAGE|REQUEST_INSTALL_PACKAGES|SYSTEM_ALERT_WINDOW|WRITE_EXTERNAL_STORAGE' \
+            "$RUNNER_TEMP/permissions.txt" || true
+
+      - name: Stage APK and signing key
+        run: |
+          set -euo pipefail
+          stage="$RUNNER_TEMP/dshgo-phone-free"
+          mkdir -p "$stage"
+          cp app/build/app/outputs/flutter-apk/app-arm64-release.apk "$stage/dsh-go-phone-free-arm64.apk"
+          cp "$SIGNING_DIR/release.jks" "$SIGNING_DIR/KEY_PASSWORD.txt" "$stage/"
+          {
+            echo 'DSH Go phone-control-free local build'
+            echo
+            echo 'This directory contains a self-signed APK and the temporary release key that signed it.'
+            echo 'Keep release.jks and KEY_PASSWORD.txt to sign future builds that can update this app.'
+            echo 'Losing them means the next differently-signed APK cannot install over this one.'
+            echo 'This is not an official DSH Go release. Uninstall clears app data and the local Linux environment.'
+            echo
+            echo 'keystore alias: dshgo-ci'
+            echo 'keystore password: in KEY_PASSWORD.txt'
+            echo 'key password: in KEY_PASSWORD.txt'
+            echo
+            echo 'SHA-256:'
+            (cd "$stage" && sha256sum dsh-go-phone-free-arm64.apk)
+            echo
+            echo 'Signing certificate:'
+          } > "$stage/README.txt"
+          grep -E 'Signer #1 certificate (DN|SHA-256 digest)' "$RUNNER_TEMP/apksigner.txt" >> "$stage/README.txt"
+          sha256sum "$stage"/* > "$stage/SHA256SUMS"
+          cat "$stage/README.txt"
+
+      - name: Upload APK and signing key
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dsh-go-phone-free-arm64
+          path: ${{ runner.temp }}/dshgo-phone-free/
+          if-no-files-found: error
+          retention-days: 14

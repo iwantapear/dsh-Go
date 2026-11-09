@@ -8,6 +8,7 @@
 // row can import it.
 
 import '../../../l10n/l10n.dart';
+import '../../../phone/build_flag.dart';
 
 /// A piece of UI text, resolved in a given language.
 typedef Label = String Function(L10n l10n);
@@ -199,18 +200,32 @@ class SettingSpot {
   bool get isEntry => opens != null;
 }
 
+bool _settingsPageAvailable(SettingsPageId id) =>
+    phoneControlBuildEnabled ||
+    !const {
+      SettingsPageId.phone,
+      SettingsPageId.phoneAppRules,
+      SettingsPageId.phoneDnd,
+      SettingsPageId.phoneUnlocks,
+    }.contains(id);
+
+bool _settingSpotAvailable(SettingSpot spot) =>
+    _settingsPageAvailable(spot.page) &&
+    (spot.opens == null || _settingsPageAvailable(spot.opens!)) &&
+    (phoneControlBuildEnabled || spot.id != 'permission-phone-confirm');
+
 /// The index itself.
 abstract final class SettingsIndex {
   static final Map<SettingsPageId, SettingsPageMeta> pages = {for (final p in _pages) p.id: p};
 
   /// Rows that aren't page entries.
-  static final List<SettingSpot> rows = List.unmodifiable(_rows);
+  static final List<SettingSpot> rows = List.unmodifiable(_rows.where(_settingSpotAvailable));
 
-  /// Every spot: the rows and each page's entry.
+  /// Every spot: the rows and each available page's entry.
   static final List<SettingSpot> spots = [
     for (final p in _pages)
-      if (p.parent != null) p.entry,
-    ..._rows,
+      if (p.parent != null && _settingsPageAvailable(p.id)) p.entry,
+    ...rows,
   ];
 
   static final Map<String, SettingSpot> _byId = {for (final s in spots) s.id: s};
@@ -225,17 +240,22 @@ abstract final class SettingsIndex {
   static Iterable<SettingSpot> on(SettingsPageId page) => spots.where((s) => s.page == page);
 
   /// The page a `dshgo://open/<id>` link names, by its page links.
-  static SettingsPageMeta? pageForLink(String id) => _pages.where((p) => p.links.contains(id)).firstOrNull;
+  static SettingsPageMeta? pageForLink(String id) =>
+      _pages.where((p) => _settingsPageAvailable(p.id) && p.links.contains(id)).firstOrNull;
 
   /// The row a `dshgo://open/<id>` link names.
-  static SettingSpot? spotForLink(String id) => _rows.where((s) => s.link == id).firstOrNull;
+  static SettingSpot? spotForLink(String id) => rows.where((s) => s.link == id).firstOrNull;
 
   /// The row showing the engine setting [path] of namespace [ns].
   static SettingSpot? forField(String ns, List<String> path) =>
       _rows.where((s) => s.field?.matches(ns, path) ?? false).firstOrNull;
 
   /// Every link id the index answers.
-  static Set<String> get linkIds => {for (final p in _pages) ...p.links, for (final s in _rows) ?s.link};
+  static Set<String> get linkIds => {
+    for (final p in _pages)
+      if (_settingsPageAvailable(p.id)) ...p.links,
+    for (final s in rows) ?s.link,
+  };
 
   /// Pages from the hub down to [id], both included.
   static List<SettingsPageId> chain(SettingsPageId id) {

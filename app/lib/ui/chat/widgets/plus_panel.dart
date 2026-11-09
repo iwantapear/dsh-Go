@@ -22,6 +22,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/l10n.dart';
+import '../../../phone/build_flag.dart';
 import '../../../plugins/native/native_model.dart';
 import '../../../plugins/native/native_state.dart';
 import '../../../state/chat_state.dart';
@@ -121,7 +122,7 @@ class _PlusRoot extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
     final sessionId = this.sessionId;
-    final phoneOn = ref.watch(phoneProvider.select((s) => s.status.enabled));
+    final phoneOn = phoneControlBuildEnabled && ref.watch(phoneProvider.select((s) => s.status.enabled));
     final tiles = [
       (AttachChoice(AttachSource.gallery), AppIcons.gallery, l10n.chatGallery, 0),
       (AttachChoice(AttachSource.camera), AppIcons.camera, l10n.chatTakePhoto, 2),

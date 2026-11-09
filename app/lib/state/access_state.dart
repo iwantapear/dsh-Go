@@ -24,6 +24,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../pets/overlay_channel.dart';
 import '../pets/pet_prefs.dart';
+import '../phone/build_flag.dart';
 import '../runtime/background_net.dart' show backgroundSettingsProvider;
 import '../runtime/runtime_bridge.dart' show RuntimePhase;
 import '../runtime/runtime_state.dart';
@@ -47,6 +48,13 @@ const onboardingWantsVoiceKey = VoiceModelController.onboardingKey;
 
 /// What a person picks on first run: things DSH Go does, not permission names.
 enum AccessFeature { files, pet, phone, background, voice }
+
+/// Drops a phone selection restored from a full build when this build has no
+/// phone-control module. Other feature choices remain untouched.
+Set<AccessFeature> sanitizeAccessFeatures(Iterable<AccessFeature> features) => {
+  for (final feature in features)
+    if (phoneControlBuildEnabled || feature != AccessFeature.phone) feature,
+};
 
 /// One system permission or maker's switch, in the order first run walks
 /// them: the system's own dialogs first, then settings pages, the makers'
@@ -110,6 +118,7 @@ const vendorSwitches = <String, List<AccessItem>>{
 
 /// What [feature] needs on a phone of [vendor], in walk order.
 List<AccessItem> accessItemsFor(AccessFeature feature, String? vendor) {
+  if (!phoneControlBuildEnabled && feature == AccessFeature.phone) return const [];
   final own = vendorSwitches[vendor] ?? const <AccessItem>[];
   final items = switch (feature) {
     AccessFeature.files => [AccessItem.storage],
@@ -263,7 +272,7 @@ class SystemAccessDriver implements AccessDriver {
   @override
   Future<AccessReadings> read() async {
     final bridge = ref.read(runtimeBridgeProvider);
-    final phone = ref.read(phoneProvider.notifier);
+    final phone = phoneControlBuildEnabled ? ref.read(phoneProvider.notifier) : null;
     final pet = ref.read(petOverlayProvider.notifier);
     final info = _safe(() => ref.read(backgroundSettingsProvider.future));
     final mic = _safe(() async => switch (await _voice.invokeMethod<String>('permission')) {
@@ -278,13 +287,15 @@ class SystemAccessDriver implements AccessDriver {
     });
     final battery = _safe(bridge.batteryExempt);
     final metered = _safe(bridge.networkMetered);
-    final phoneRead = _safe(() async {
-      await phone.refreshStatus();
-      return true;
-    });
+    final phoneRead = phone == null
+        ? null
+        : _safe(() async {
+            await phone.refreshStatus();
+            return true;
+          });
     final overlay = _safe(pet.refresh);
-    await phoneRead;
-    final status = ref.read(phoneProvider).status;
+    if (phoneRead case final read?) await read;
+    final status = phoneControlBuildEnabled ? ref.read(phoneProvider).status : null;
     final petStatus = await overlay;
     final settings = await info;
     // Keep the pages that show the same facts in step.
@@ -297,13 +308,17 @@ class SystemAccessDriver implements AccessDriver {
       storage: await storage,
       notifications: await notify,
       battery: await battery,
-      accessibility: status.ready ? status.a11y.enabled : null,
+      accessibility: status?.ready == true ? status!.a11y.enabled : null,
       overlay: petStatus == null || !petStatus.native ? null : petStatus.permission.usable,
       overlayBlocked: petStatus?.permission == PetOverlayPermission.blocked,
-      restricted: status.device.restricted,
-      sdk: status.device.sdkInt ?? (petStatus?.sdk == 0 ? null : petStatus?.sdk),
-      manufacturer: status.device.manufacturer,
-      sideloaded: status.device.sideloaded,
+      restricted: status?.device.restricted,
+      sdk: status?.device.sdkInt ?? (petStatus?.sdk == 0 ? null : petStatus?.sdk),
+      manufacturer: phoneControlBuildEnabled
+          ? status?.device.manufacturer
+          : (petStatus?.manufacturer.isNotEmpty ?? false)
+          ? petStatus!.manufacturer
+          : null,
+      sideloaded: status?.device.sideloaded,
       metered: await metered,
     );
   }
@@ -324,7 +339,11 @@ class SystemAccessDriver implements AccessDriver {
           // The device ignores legacy storage: 「所有文件访问」 is the way.
           if (access.permission && !access.legacy) return bridge.openAllFilesAccess();
           // Denied again: the dialog won't come back, the app's page will.
-          if (again) return ref.read(phoneProvider.notifier).openAppDetails();
+          if (again) {
+            return phoneControlBuildEnabled
+                ? ref.read(phoneProvider.notifier).openAppDetails()
+                : ref.read(petOverlayProvider.notifier).openAppDetails();
+          }
           return true;
         case AccessItem.notifications:
           return ref.read(notifyChannelProvider).openSettings();
@@ -333,6 +352,7 @@ class SystemAccessDriver implements AccessDriver {
         case AccessItem.vendorBackground || AccessItem.autostart || AccessItem.popup:
           return await bridge.openVendorSettings(item.vendorWire!) != null;
         case AccessItem.accessibility:
+          if (!phoneControlBuildEnabled) return false;
           return ref.read(phoneProvider.notifier).openAccessibilitySettings();
         case AccessItem.overlay:
           // On with it: the pet is what the permission is for. A vivo switch the
@@ -345,7 +365,11 @@ class SystemAccessDriver implements AccessDriver {
   }
 
   @override
-  Future<bool> openAppInfo() async => await _safe(ref.read(phoneProvider.notifier).openAppDetails) ?? false;
+  Future<bool> openAppInfo() async => await _safe(
+    phoneControlBuildEnabled
+        ? ref.read(phoneProvider.notifier).openAppDetails
+        : ref.read(petOverlayProvider.notifier).openAppDetails,
+  ) ?? false;
 }
 
 final accessDriverProvider = Provider<AccessDriver>((ref) => SystemAccessDriver(ref));
@@ -447,7 +471,7 @@ class AccessSetupController extends Notifier<AccessSetup> {
       };
       state = AccessSetup(
         loaded: true,
-        features: names(map['features'], AccessFeature.values),
+        features: sanitizeAccessFeatures(names(map['features'], AccessFeature.values)),
         skipped: names(map['skipped'], AccessItem.values),
       );
     } catch (_) {
@@ -478,13 +502,14 @@ class AccessSetupController extends Notifier<AccessSetup> {
   /// phone's policies now, or as soon as they can be written
   /// ([PhoneController.chooseConfirmMode]).
   Future<void> choose(Set<AccessFeature> features, {PhoneConfirmMode? phoneMode}) async {
-    state = AccessSetup(loaded: true, features: {...features});
+    final selected = sanitizeAccessFeatures(features);
+    state = AccessSetup(loaded: true, features: selected);
     await _save();
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(onboardingWantsVoiceKey, features.contains(AccessFeature.voice));
+      await prefs.setBool(onboardingWantsVoiceKey, selected.contains(AccessFeature.voice));
     } catch (_) {}
-    if (phoneMode != null && features.contains(AccessFeature.phone)) {
+    if (phoneMode != null && selected.contains(AccessFeature.phone)) {
       try {
         await ref.read(phoneProvider.notifier).chooseConfirmMode(phoneMode);
       } catch (_) {

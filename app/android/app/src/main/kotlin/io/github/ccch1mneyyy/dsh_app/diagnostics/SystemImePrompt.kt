@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import io.flutter.plugin.common.MethodChannel
+import io.github.ccch1mneyyy.dsh_app.BuildConfig
 import io.github.ccch1mneyyy.dsh_app.R
 import io.github.ccch1mneyyy.dsh_app.i18n.AppStrings
 import io.github.ccch1mneyyy.dsh_app.phone.background.BackgroundControl
@@ -43,6 +44,10 @@ internal class SystemImePrompt : Application.ActivityLifecycleCallbacks {
     fun cancel() { pending?.let { finish(it, SystemImeEvidence.result("cancelled")) } }
 
     fun collect(result: MethodChannel.Result) {
+        if (!BuildConfig.PHONE_CONTROL_ENABLED) {
+            result.error("phone_control_disabled", "System IME diagnostics are unsupported in a phone-control-free build", null)
+            return
+        }
         if (pending != null || running.get()) { result.success(SystemImeEvidence.result("busy")); return }
         val activity = host
         // Consent is a main-screen user action, never a virtual-display automation target.

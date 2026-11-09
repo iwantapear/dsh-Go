@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
+import '../../phone/build_flag.dart';
 import '../../state/phone_skill_use.dart';
 import '../../state/phone_state.dart';
 
@@ -12,6 +13,7 @@ import '../../state/phone_state.dart';
 Future<PreparedPhoneSkill?> preparePhoneSkillUse(BuildContext context, {
   required String skillId, required String sessionId,
 }) async {
+  if (!phoneControlBuildEnabled) return null;
   final container = ProviderScope.containerOf(context, listen: false);
   final origin = PhoneSkillUseOrigin.capture(container, sessionId);
   if (origin == null) {

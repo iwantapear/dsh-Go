@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../l10n/l10n.dart';
+import '../../phone/build_flag.dart';
 import '../../runtime/runtime_state.dart';
 import '../../state/connection_state.dart';
 import '../../state/engine_settings_state.dart' show describeSettingsError;
@@ -183,28 +184,32 @@ class _PermissionPageState extends ConsumerState<PermissionPage> {
     ];
 
     final phoneFiles = ref.watch(settingsProvider.select((s) => s.phoneStorage));
-    final confirm = ref.watch(phoneProvider.select((s) => s.policies?.confirmMode));
-    final phone = ListPageCard(
-      title: l10n.hubPermissionPhone,
-      children: [
-        // The phone's storage is this phone's engine's to mount.
-        if (ref.watch(activeHostProvider).isLocal)
-          MergeSemantics(
-            child: ListPageRow(
-              spot: Spots.phoneFiles,
-              subtitle: l10n.hubSettingsPhoneFilesHint,
-              onTap: () => unawaited(_onPhoneFiles(!phoneFiles)),
-              trailing: Switch(value: phoneFiles, onChanged: (v) => unawaited(_onPhoneFiles(v))),
-            ),
-          ),
-        // The control itself stays on 手机操控: this opens it at that row.
-        ListPageRow(
-          spot: Spots.permissionPhoneConfirm,
-          value: confirm?.label,
-          onTap: () => unawaited(openSpot(context, Spots.phoneConfirm)),
-        ),
-      ],
-    );
+    final confirm = phoneControlBuildEnabled ? ref.watch(phoneProvider.select((s) => s.policies?.confirmMode)) : null;
+    final localHost = ref.watch(activeHostProvider).isLocal;
+    final phone = localHost || phoneControlBuildEnabled
+        ? ListPageCard(
+            title: l10n.hubPermissionPhone,
+            children: [
+              // The phone's storage is this phone's engine's to mount.
+              if (localHost)
+                MergeSemantics(
+                  child: ListPageRow(
+                    spot: Spots.phoneFiles,
+                    subtitle: l10n.hubSettingsPhoneFilesHint,
+                    onTap: () => unawaited(_onPhoneFiles(!phoneFiles)),
+                    trailing: Switch(value: phoneFiles, onChanged: (v) => unawaited(_onPhoneFiles(v))),
+                  ),
+                ),
+              // The control itself stays on 手机操控: this opens it at that row.
+              if (phoneControlBuildEnabled)
+                ListPageRow(
+                  spot: Spots.permissionPhoneConfirm,
+                  value: confirm?.label,
+                  onTap: () => unawaited(openSpot(context, Spots.phoneConfirm)),
+                ),
+            ],
+          )
+        : null;
 
     return AppPage.list(
       title: l10n.featuresPermissions,
@@ -251,8 +256,7 @@ class _PermissionPageState extends ConsumerState<PermissionPage> {
               ),
             ),
         ],
-        const SizedBox(height: 24),
-        phone,
+        if (phone case final phone?) ...[const SizedBox(height: 24), phone],
       ],
     );
   }
