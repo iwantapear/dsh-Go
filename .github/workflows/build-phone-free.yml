@@ -25,6 +25,10 @@ jobs:
     name: Phone-free arm64 APK
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    env:
+      # Optional: reuse the key from an earlier artifact so later builds can update the install.
+      DSH_GO_SIGNING_KEY_B64: ${{ secrets.DSH_GO_SIGNING_KEY_B64 }}
+      DSH_GO_SIGNING_PASSWORD: ${{ secrets.DSH_GO_SIGNING_PASSWORD }}
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -56,26 +60,38 @@ jobs:
           sudo install -d /usr/share/fonts/noto-cjk
           sudo install -m644 /usr/share/fonts/opentype/noto/NotoSansCJK-{Regular,Bold,Light}.ttc /usr/share/fonts/noto-cjk/
 
-      - name: Create temporary release signing key
+      - name: Prepare the release signing key
         run: |
           signing="$RUNNER_TEMP/dshgo-signing"
           mkdir -p "$signing"
-          password="$(openssl rand -hex 24)"
-          keytool -genkeypair \
-            -keystore "$signing/release.jks" \
-            -storepass "$password" \
-            -keypass "$password" \
-            -alias dshgo-ci \
-            -keyalg RSA \
-            -keysize 4096 \
-            -validity 10000 \
-            -dname "CN=DSH Go Local CI, OU=Self-signed, O=Self-signed, L=Shenzhen, ST=Guangdong, C=CN"
+          if [[ -n "$DSH_GO_SIGNING_KEY_B64" || -n "$DSH_GO_SIGNING_PASSWORD" ]]; then
+            if [[ -z "$DSH_GO_SIGNING_KEY_B64" || -z "$DSH_GO_SIGNING_PASSWORD" ]]; then
+              echo 'Set both DSH_GO_SIGNING_KEY_B64 and DSH_GO_SIGNING_PASSWORD, or neither.' >&2
+              exit 1
+            fi
+            printf '%s' "$DSH_GO_SIGNING_KEY_B64" | base64 -d > "$signing/release.jks"
+            password="$DSH_GO_SIGNING_PASSWORD"
+            echo 'SIGNING_EPHEMERAL=0' >> "$GITHUB_ENV"
+          else
+            password="$(openssl rand -hex 24)"
+            keytool -genkeypair \
+              -keystore "$signing/release.jks" \
+              -storepass "$password" \
+              -keypass "$password" \
+              -alias dshgo-ci \
+              -keyalg RSA \
+              -keysize 4096 \
+              -validity 10000 \
+              -dname "CN=DSH Go Local CI, OU=Self-signed, O=Self-signed, L=Shenzhen, ST=Guangdong, C=CN"
+            printf '%s\n' "$password" > "$signing/KEY_PASSWORD.txt"
+            chmod 600 "$signing/KEY_PASSWORD.txt"
+            echo 'SIGNING_EPHEMERAL=1' >> "$GITHUB_ENV"
+            echo '::warning::Generated a new temporary signing key; configure the two signing secrets to update this install later.'
+          fi
           chmod 600 "$signing/release.jks"
           printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=dshgo-ci\nkeyPassword=%s\n' \
             "$signing/release.jks" "$password" "$password" > app/android/key.properties
           chmod 600 app/android/key.properties
-          printf '%s\n' "$password" > "$signing/KEY_PASSWORD.txt"
-          chmod 600 "$signing/KEY_PASSWORD.txt"
           echo "SIGNING_DIR=$signing" >> "$GITHUB_ENV"
 
       - name: Resolve Flutter packages and analyze
@@ -153,18 +169,22 @@ jobs:
           stage="$RUNNER_TEMP/dshgo-phone-free"
           mkdir -p "$stage"
           cp app/build/app/outputs/flutter-apk/app-arm64-release.apk "$stage/dsh-go-phone-free-arm64.apk"
-          cp "$SIGNING_DIR/release.jks" "$SIGNING_DIR/KEY_PASSWORD.txt" "$stage/"
+          if [[ "$SIGNING_EPHEMERAL" == 1 ]]; then
+            cp "$SIGNING_DIR/release.jks" "$SIGNING_DIR/KEY_PASSWORD.txt" "$stage/"
+          fi
           {
             echo 'DSH Go phone-control-free local build'
             echo
-            echo 'This directory contains a self-signed APK and the temporary release key that signed it.'
-            echo 'Keep release.jks and KEY_PASSWORD.txt to sign future builds that can update this app.'
-            echo 'Losing them means the next differently-signed APK cannot install over this one.'
             echo 'This is not an official DSH Go release. Uninstall clears app data and the local Linux environment.'
+            if [[ "$SIGNING_EPHEMERAL" == 1 ]]; then
+              echo 'It was signed with a new temporary release key, included here.'
+              echo 'Keep release.jks and KEY_PASSWORD.txt to sign future builds that can update this app.'
+              echo 'Losing them means the next differently-signed APK cannot install over this one.'
+            else
+              echo 'Signing used the repository signing secrets; the key is not included.'
+            fi
             echo
             echo 'keystore alias: dshgo-ci'
-            echo 'keystore password: in KEY_PASSWORD.txt'
-            echo 'key password: in KEY_PASSWORD.txt'
             echo
             echo 'SHA-256:'
             (cd "$stage" && sha256sum dsh-go-phone-free-arm64.apk)
@@ -172,11 +192,11 @@ jobs:
             echo 'Signing certificate:'
           } > "$stage/README.txt"
           grep -E 'certificate (DN|SHA-256 digest)' "$RUNNER_TEMP/apksigner.txt" >> "$stage/README.txt"
-          sha256sum \
-            "$stage/dsh-go-phone-free-arm64.apk" \
-            "$stage/release.jks" \
-            "$stage/KEY_PASSWORD.txt" \
-            "$stage/README.txt" > "$stage/SHA256SUMS"
+          if [[ "$SIGNING_EPHEMERAL" == 1 ]]; then
+            (cd "$stage" && sha256sum dsh-go-phone-free-arm64.apk release.jks KEY_PASSWORD.txt README.txt > SHA256SUMS)
+          else
+            (cd "$stage" && sha256sum dsh-go-phone-free-arm64.apk README.txt > SHA256SUMS)
+          fi
           cat "$stage/README.txt"
 
       - name: Upload APK and signing key
