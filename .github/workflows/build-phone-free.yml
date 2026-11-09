@@ -171,8 +171,12 @@ jobs:
             echo
             echo 'Signing certificate:'
           } > "$stage/README.txt"
-          grep -E 'Signer #1 certificate (DN|SHA-256 digest)' "$RUNNER_TEMP/apksigner.txt" >> "$stage/README.txt"
-          sha256sum "$stage"/* > "$stage/SHA256SUMS"
+          grep -E 'certificate (DN|SHA-256 digest)' "$RUNNER_TEMP/apksigner.txt" >> "$stage/README.txt"
+          sha256sum \
+            "$stage/dsh-go-phone-free-arm64.apk" \
+            "$stage/release.jks" \
+            "$stage/KEY_PASSWORD.txt" \
+            "$stage/README.txt" > "$stage/SHA256SUMS"
           cat "$stage/README.txt"
 
       - name: Upload APK and signing key
