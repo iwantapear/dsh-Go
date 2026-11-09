@@ -124,7 +124,7 @@ jobs:
           fi
 
           "$build_tools/aapt2" dump permissions "$apk" | tee "$RUNNER_TEMP/permissions.txt"
-          "$build_tools/aapt2" dump xmltree "$apk" AndroidManifest.xml > "$RUNNER_TEMP/manifest.txt"
+          "$build_tools/aapt2" dump xmltree --file AndroidManifest.xml "$apk" > "$RUNNER_TEMP/manifest.txt"
           for forbidden in \
             android.permission.WRITE_SECURE_SETTINGS \
             moe.shizuku.manager.permission.API_V23 \

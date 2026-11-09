@@ -31,8 +31,26 @@ val phoneFreeManifest = if (dshPhoneControl) null else {
         val source = File(projectDir, "src/main/AndroidManifest.xml").readText()
         val marked = Regex("""(?s)[ \t]*<!-- dsh-phone-free:begin -->.*?<!-- dsh-phone-free:end -->[ \t]*\r?\n?""")
         require(marked.findAll(source).count() == 7) { "expected 7 dsh-phone-free manifest blocks" }
-        val stripped = marked.replace(source, "")
+        var stripped = marked.replace(source, "")
         require("dsh-phone-free" !in stripped) { "dsh-phone-free manifest marker left" }
+        // AARs still contribute some declarations (the Shizuku permission comes from its provider
+        // artifact). Removal nodes in the app manifest keep those out of the merged result too.
+        val dependencyRemovals = """
+    <!-- dsh-phone-free: strip declarations contributed by dependencies. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" tools:node="remove" />
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:node="remove" />
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" tools:node="remove" />
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" tools:node="remove" />
+    <activity android:name=".phone.selfcheck.PhoneSelfCheckTargetActivity" tools:node="remove" />
+    <service android:name=".phone.a11y.PhoneA11yService" tools:node="remove" />
+    <provider android:name="rikka.shizuku.ShizukuProvider" tools:node="remove" />
+    <receiver android:name=".phone.background.AdbPairingNotification${'$'}Receiver" tools:node="remove" />
+    <receiver android:name=".phone.a11y.A11yKeeper${'$'}Receiver" tools:node="remove" />
+    <receiver android:name=".phone.background.PrivilegedKeepJob${'$'}Receiver" tools:node="remove" />
+    <service android:name=".phone.background.PrivilegedKeepJob" tools:node="remove" />
+"""
+        stripped = stripped.replace("</manifest>", dependencyRemovals + "</manifest>")
+        require("dsh-phone-free: strip" in stripped)
         out.parentFile.mkdirs()
         out.writeText(stripped)
     }
