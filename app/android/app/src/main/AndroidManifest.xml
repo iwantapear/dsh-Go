@@ -2,7 +2,9 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" tools:node="${phoneControlNode}" />
+    <!-- dsh-phone-free:begin -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- dsh-phone-free:end -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
@@ -11,7 +13,9 @@
          Normal, granted at install; older systems skip a permission they don't define. -->
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:ignore="ProtectedPermissions" tools:node="${phoneControlNode}" />
+    <!-- dsh-phone-free:begin -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:ignore="ProtectedPermissions" />
+    <!-- dsh-phone-free:end -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- Composer voice input (voice/VoicePlugin.kt), asked for on the first tap of the mic. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -23,7 +27,9 @@
          SpeechRecognizer.isRecognitionAvailable unless declared; add to <queries>:
          <intent><action android:name="android.speech.RecognitionService" /></intent> -->
     <!-- Phone control `intent kind=alarm/timer` (normal permission; some clock apps require it). -->
-    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" tools:node="${phoneControlNode}" />
+    <!-- dsh-phone-free:begin -->
+    <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <!-- dsh-phone-free:end -->
     <!-- Optional "访问手机文件" mode: shared storage is bind-mounted at /sdcard in the Linux env. -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
@@ -32,7 +38,9 @@
         tools:ignore="ScopedStorage" />
 
     <!-- 不打扰模式 (optional, default off): Shizuku provides the shell-uid channel. -->
-    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" tools:node="${phoneControlNode}" />
+    <!-- dsh-phone-free:begin -->
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
+    <!-- dsh-phone-free:end -->
 
     <!-- App 外悬浮窗 (pet/PetOverlay.kt): the floating pet over other apps, off until the person turns it on. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
@@ -213,14 +221,15 @@
             android:theme="@android:style/Theme.NoDisplay" />
 
         <!-- Local self-check only: App UID starts this fixed inert target on its leased display. -->
+        <!-- dsh-phone-free:begin -->
         <activity
             android:name=".phone.selfcheck.PhoneSelfCheckTargetActivity"
             android:exported="false"
             android:launchMode="standard"
             android:taskAffinity="${applicationId}.phone.selfcheck"
             android:excludeFromRecents="true"
-            android:theme="@android:style/Theme.Material.Light.NoActionBar"
-            tools:node="${phoneControlNode}" />
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <!-- dsh-phone-free:end -->
 
         <!-- Quick Settings tile 「新对话」 (tile/NewChatTileService.kt). -->
         <service
@@ -256,12 +265,12 @@
         </service>
 
         <!-- 手机操控: reads and drives the main screen, owns the status bar / confirm overlay (phone/a11y). -->
+        <!-- dsh-phone-free:begin -->
         <service
             android:name=".phone.a11y.PhoneA11yService"
             android:label="@string/phone_a11y_label"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-            android:exported="true"
-            tools:node="${phoneControlNode}">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
@@ -277,18 +286,17 @@
             android:multiprocess="false"
             android:enabled="true"
             android:exported="true"
-            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"
-            tools:node="${phoneControlNode}" />
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
         <!-- 不打扰模式: self-ADB wireless-debugging pairing code, typed in the notification. -->
         <receiver
             android:name=".phone.background.AdbPairingNotification$Receiver"
-            android:exported="false"
-            tools:node="${phoneControlNode}">
+            android:exported="false">
             <intent-filter>
                 <action android:name="io.github.ccch1mneyyy.dsh_app.PHONE_ADB_PAIR_CODE" />
             </intent-filter>
         </receiver>
+        <!-- dsh-phone-free:end -->
 
         <!-- 伙伴小屋 on the home screen (companion/CompanionWidget.kt). -->
         <receiver
@@ -304,20 +312,22 @@
         </receiver>
 
         <receiver android:name=".notify.NotifyActionReceiver" android:exported="false" />
-        <receiver android:name=".phone.a11y.A11yKeeper$Receiver" android:exported="false" tools:node="${phoneControlNode}">
+        <!-- dsh-phone-free:begin -->
+        <receiver android:name=".phone.a11y.A11yKeeper$Receiver" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 
         <!-- Explicit per-channel keep only; no periodic job or foreground service. -->
-        <receiver android:name=".phone.background.PrivilegedKeepJob$Receiver" android:exported="false" tools:node="${phoneControlNode}">
+        <receiver android:name=".phone.background.PrivilegedKeepJob$Receiver" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
-        <service android:name=".phone.background.PrivilegedKeepJob" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="false" tools:node="${phoneControlNode}" />
+        <service android:name=".phone.background.PrivilegedKeepJob" android:permission="android.permission.BIND_JOB_SERVICE" android:exported="false" />
+        <!-- dsh-phone-free:end -->
 
         <!-- Chat artifacts: hands one file at a time to the app that opens it (files/FilesPlugin.kt). -->
         <provider

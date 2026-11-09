@@ -24,6 +24,20 @@ val dshPhoneControl = providers.gradleProperty("dshPhoneControl").orElse("true")
     require(it == "true" || it == "false") { "dshPhoneControl must be true or false" }
 }.toBoolean()
 
+// Manifest placeholders cannot replace tools:node values (the merger parses them as enum names before
+// expansion), so a no-phone build feeds the merger a generated copy with the marked nodes deleted.
+val phoneFreeManifest = if (dshPhoneControl) null else {
+    layout.buildDirectory.file("generated/dsh-phone-free/AndroidManifest.xml").get().asFile.also { out ->
+        val source = File(projectDir, "src/main/AndroidManifest.xml").readText()
+        val marked = Regex("""(?s)[ \t]*<!-- dsh-phone-free:begin -->.*?<!-- dsh-phone-free:end -->[ \t]*\r?\n?""")
+        require(marked.findAll(source).count() == 7) { "expected 7 dsh-phone-free manifest blocks" }
+        val stripped = marked.replace(source, "")
+        require("dsh-phone-free" !in stripped) { "dsh-phone-free manifest marker left" }
+        out.parentFile.mkdirs()
+        out.writeText(stripped)
+    }
+}
+
 // Per-ABI runtime bundles produced by runtime/build-runtime.sh.
 val runtimeOut = rootProject.file("../../runtime/out")
 
@@ -54,7 +68,6 @@ android {
     defaultConfig {
         applicationId = "io.github.ccch1mneyyy.dsh_app"
         buildConfigField("boolean", "PHONE_CONTROL_ENABLED", dshPhoneControl.toString())
-        manifestPlaceholders["phoneControlNode"] = if (dshPhoneControl) "merge" else "remove"
         // java.nio.file (symlinks while unpacking the rootfs) needs API 26.
         minSdk = 26
         // Target 28 like Termux, so the API 29+ exec restriction on app-private
@@ -77,6 +90,9 @@ android {
     }
 
     sourceSets {
+        getByName("main") {
+            if (phoneFreeManifest != null) manifest.srcFile(phoneFreeManifest)
+        }
         getByName("arm64") {
             assets.srcDir(File(runtimeOut, "arm64-v8a/assets"))
             jniLibs.srcDir(File(runtimeOut, "arm64-v8a/jniLibs"))
